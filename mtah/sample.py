@@ -100,6 +100,45 @@ def event_labels(events, period, n_rows, row_of_frame):
     return labels
 
 
+def controlled(labels, row_frames, events, period, min_frames=75, min_passes=3):
+    """Apply CHALLENGE.md's "controlled possession" proxy to event-derived labels.
+
+    A spell of one team that is shorter than `min_frames` (3 s: "keeps the ball a few seconds")
+    and contains fewer than `min_passes` passes ("more than two consecutive passes") is not a
+    change of possession: it goes back to the team that had the ball before it. A spell that
+    follows a dead ball is always kept -- a restart has a clear possessor. Constants come from the
+    wording of CHALLENGE.md, not from any ground truth.
+    """
+    out = labels.copy()
+    pass_frames = {t: np.array(sorted(e["start"] for e in events
+                                      if e["type"] == "PASS" and e["team"] == t))
+                   for t in (H, A)}
+    for p in sorted(set(period[period > 0].tolist())):
+        rows = np.flatnonzero(period == p)
+        changed = True
+        while changed:
+            changed = False
+            seg = out[rows]
+            edges = np.flatnonzero(np.diff(seg)) + 1
+            starts = np.r_[0, edges]
+            stops = np.r_[edges, len(seg)]
+            for k in range(1, len(starts) - 1):
+                a, b, team = starts[k], stops[k], seg[starts[k]]
+                prev_team = seg[starts[k - 1]]
+                if team not in (H, A) or prev_team not in (H, A) or prev_team == team:
+                    continue
+                if b - a >= min_frames:
+                    continue
+                f0, f1 = row_frames(rows[a]), row_frames(rows[b - 1])
+                pf = pass_frames[team]
+                if np.searchsorted(pf, f1, "right") - np.searchsorted(pf, f0, "left") >= min_passes:
+                    continue
+                out[rows[a:b]] = prev_team
+                changed = True
+                break
+    return out
+
+
 def _game(px, py, team, bx, by, period, labels, name):
     L, W = PITCH
     return {"name": name, "px": px * L, "py": py * W, "team": team, "bx": bx * L, "by": by * W,
@@ -132,6 +171,7 @@ def load_csv_game(n):
                "period": int(r["Period"])} for i, r in ev.iterrows()]
     row_frames = frames
     labels = event_labels(events, period, len(frames), lambda rows: row_frames[rows])
+    labels = controlled(labels, lambda rows: row_frames[rows], events, period)
     return _game(px, py, np.array(teams, dtype=np.int8), ball[:, 0], ball[:, 1], period, labels,
                  "sample{}".format(n))
 
@@ -163,6 +203,7 @@ def load_epts_game(n=3):
                        "type": e["type"]["name"].upper(), "subtype": sub.upper(),
                        "period": int(e["period"])})
     labels = event_labels(events, period, len(fid), lambda rows: fid[rows])
+    labels = controlled(labels, lambda rows: fid[rows], events, period)
     return _game(raw["px"], raw["py"], raw["team"], raw["bx"], raw["by"], period, labels,
                  "sample{}".format(n))
 
