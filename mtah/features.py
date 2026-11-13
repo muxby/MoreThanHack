@@ -180,8 +180,40 @@ class _quiet:
         self._w.__exit__(*a)
 
 
+CONTEXT_COLS = ("ball_seen", "near_h", "dd", "dlog", "dcx", "dsx", "dsy", "dline", "dfront", "dv",
+                "dvfwd", "v_all", "ball_speed", "ball_out", "bx", "n3_h", "n3_a", "vfast_h",
+                "vfast_a", "n_all", "ball_touch_dist")
+
+
+def _per_period(values, period, fn):
+    """Apply fn (DataFrame -> DataFrame) to each period block of a 2-D float array."""
+    out = np.full(values.shape, np.nan, dtype=np.float32)
+    for p in (1, 2):
+        rows = np.flatnonzero(period == p)
+        if len(rows):
+            out[rows] = fn(pd.DataFrame(values[rows])).to_numpy(dtype=np.float32)
+    return out
+
+
 def features(game):
-    """Per-frame features; NaN outside play."""
-    out = base_features(game)
-    out[game["period"] == 0] = np.nan
+    """Base features plus centred rolling means at several scales, per period."""
+    base = base_features(game)
+    period = game["period"]
+    ctx = base[list(CONTEXT_COLS)].to_numpy(dtype=np.float32)
+    parts = [base]
+    for w in CONTEXT:
+        r = _per_period(ctx, period,
+                        lambda df: df.rolling(2 * w + 1, center=True, min_periods=1).mean())
+        parts.append(pd.DataFrame(r, columns=[c + "_m%d" % w for c in CONTEXT_COLS]))
+    # Asymmetric context: just before vs just after a frame -- transitions show up here.
+    cols = ("near_h", "dd", "dcx", "v_all", "ball_seen")
+    vals = base[list(cols)].to_numpy(dtype=np.float32)
+    for w in (25, 75):
+        before = _per_period(vals, period, lambda df: df.rolling(w, min_periods=1).mean())
+        after = _per_period(vals, period,
+                            lambda df: df[::-1].rolling(w, min_periods=1).mean()[::-1])
+        parts.append(pd.DataFrame(before, columns=[c + "_b%d" % w for c in cols]))
+        parts.append(pd.DataFrame(after, columns=[c + "_a%d" % w for c in cols]))
+    out = pd.concat(parts, axis=1)
+    out[period == 0] = np.nan
     return out
