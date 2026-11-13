@@ -1,5 +1,6 @@
-"""Frame classifier (H/A/D)."""
+"""Frame classifier (H/A/D) + Viterbi decoding into whole possessions."""
 
+import math
 import zlib
 
 import numpy as np
@@ -49,3 +50,40 @@ def proba(clf, game):
     p1 = p1[:, [order.index(k) for k in (H, A, D)]]
     p2 = p2[:, [order.index(k) for k in (A, H, D)]]  # swapped view: its H is our A
     return 0.5 * (p1 + p2)
+
+
+def viterbi(p, period, c_switch, c_dead, eps=1e-4):
+    """Most likely H/A/D path per period with switching penalties (in nats).
+
+    c_switch is the cost of a direct H <-> A change of possession, c_dead the cost of entering or
+    leaving a dead ball. Frames outside a period are X.
+    """
+    out = np.full(len(period), X, dtype=np.int8)
+    logp = np.log(np.clip(p, eps, 1.0))
+    cost = [[0.0, c_switch, c_dead], [c_switch, 0.0, c_dead], [c_dead, c_dead, 0.0]]
+    for per in (1, 2):
+        rows = np.flatnonzero(period == per)
+        if not len(rows):
+            continue
+        lp = logp[rows].tolist()
+        n = len(rows)
+        back = np.zeros((n, 3), dtype=np.int8)
+        score = list(lp[0])
+        for t in range(1, n):
+            new = [0.0, 0.0, 0.0]
+            row = back[t]
+            for j in range(3):
+                best, arg = -math.inf, 0
+                for i in range(3):
+                    v = score[i] - cost[i][j]
+                    if v > best:
+                        best, arg = v, i
+                new[j] = best + lp[t][j]
+                row[j] = arg
+            score = new
+        path = np.empty(n, dtype=np.int8)
+        path[-1] = int(np.argmax(score))
+        for t in range(n - 1, 0, -1):
+            path[t - 1] = back[t, path[t]]
+        out[rows] = path
+    return out
