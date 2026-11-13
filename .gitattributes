@@ -1,0 +1,5 @@
+# Keep the submission byte-exact across platforms: the rules require the repository to
+# regenerate the same file, so line endings must never be rewritten.
+* text=auto eol=lf
+*.csv text eol=lf
+*.joblib binary
