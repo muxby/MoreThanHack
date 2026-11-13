@@ -1,0 +1,12 @@
+# Match data is licensed for the competition only and must never be committed.
+data/
+*.mp4
+*_atd.txt
+*_atd.xml
+*_homography.csv
+*_smart_tagging.xml
+# Cached intermediate arrays derived from the tracking -- would reconstruct it.
+cache/
+external/
+__pycache__/
+*.pyc
