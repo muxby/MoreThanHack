@@ -58,6 +58,7 @@ def event_labels(events, period, n_rows, row_of_frame):
             continue
         changes = []  # (frame id, label)
         pending_dead = None
+        prev_end = None  # latest end frame of any on-ball event so far
         last_end = max(e["end"] for e in evs)
         for e in evs:
             et, st = e["type"], e["subtype"]
@@ -66,13 +67,22 @@ def event_labels(events, period, n_rows, row_of_frame):
                     pending_dead = e["start"] if pending_dead is None else min(pending_dead,
                                                                                e["start"])
                 continue
-            if pending_dead is not None:
-                if pending_dead <= e["start"]:
-                    changes.append((pending_dead, D))
+            # Every restart implies a stoppage before it: if nothing has flagged one yet, the
+            # ball went dead when the previous on-ball action ended.
+            restart = et == "SET PIECE" or (et == "PASS" and "GOAL KICK" in st.split("-"))
+            if restart and pending_dead is None and prev_end is not None \
+                    and prev_end < e["start"]:
+                pending_dead = prev_end
+            # A dead ball takes effect only once an event starts at or after it; events that
+            # start earlier (e.g. a zero-length carry listed after the BALL OUT) leave it pending.
+            if pending_dead is not None and pending_dead <= e["start"]:
+                changes.append((pending_dead, D))
                 pending_dead = None
             changes.append((e["start"], e["team"]))
             if _dead_after(et, st):
-                pending_dead = max(e["end"], e["start"])
+                end = max(e["end"], e["start"])
+                pending_dead = end if pending_dead is None else min(pending_dead, end)
+            prev_end = max(prev_end or e["end"], e["end"], e["start"])
         if pending_dead is not None:
             changes.append((pending_dead, D))
         first = evs[0]["start"]
