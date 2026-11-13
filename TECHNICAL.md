@@ -107,7 +107,24 @@ choice is not fragile. The final model is retrained on all three games.
   and decoded as its own state. Dead-ball ownership is not modelled, as instructed.
 - **Ungraded frames** (before kickoff, halftime, after the final whistle) are written as `X`.
 
-## 7. Limitations
+## 7. Pipeline check on the public window
+
+The public 5-minute ground truth was used **only** to confirm the pipeline is wired correctly
+(frames aligned, labels meaning what we think), with the official scorer. It was never used for
+training, tuning or choosing between versions.
+
+| submission | macroF1 | spellF1 | possessions | mean duration |
+|---|---|---|---|---|
+| ground truth | — | — | 17 | 14.2 s |
+| **Team Claude** | **0.7165** | 0.4143 | 11 | 16.5 s |
+| baseline_smooth125 | 0.5812 | 0.4242 | 16 | 18.5 s |
+| baseline_smooth50 (published floor) | 0.6207 | 0.3256 | 26 | 10.8 s |
+
+The model produces possessions of a realistic number and length, and the best per-frame agreement on
+the board. With only 17 possessions this window cannot rank submissions (EVALUATION.md); it is a
+sanity check, nothing more.
+
+## 8. Limitations
 
 - **Domain gap:** the external labels come from event data, while the challenge ground truth comes
   from corrected tracking ownership. Definitions of when a possession starts can differ by a fraction
@@ -120,8 +137,15 @@ choice is not fragile. The final model is retrained on all three games.
 - **Smart Tagging is unused.** It carries strong team evidence, but there is no external data to
   calibrate how much to trust it.
 
-## 8. Reproduction
+## 9. Reproduction
 
-See [README.md](README.md). `python train.py` followed by `python predict.py --name <team>`
-regenerates the submission byte for byte: all randomness is seeded and the classifier is
-deterministic.
+All randomness is seeded and the classifier is deterministic, so these commands regenerate the
+submission byte for byte (`scripts/check_reproducible.py` verifies it). Full details are in README.md.
+
+```
+pip install -r requirements.txt
+git clone https://github.com/metrica-sports/sample-data ../external/sample-data
+git clone https://github.com/metrica-sports/more-than-a-hack-2027 ../repo
+python train.py                          # external data only -> models/
+python predict.py --name "Team Claude"   # -> submissions/Team Claude.csv
+```
